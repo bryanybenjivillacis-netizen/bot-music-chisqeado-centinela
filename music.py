@@ -208,10 +208,18 @@ class GuildPlayer:
 
         self.voice_client.play(source, after=after, bitrate=384, signal_type="music")
         embed, view = self.build_now_playing(track)
+        
+        # ─── EDITAR MENSAJE EXISTENTE O ENVIAR UNO NUEVO ───
         try:
-            self.now_playing_message = await self.voice_client.channel.send(embed=embed, view=view)
+            if self.now_playing_message:
+                await self.now_playing_message.edit(embed=embed, view=view)
+            else:
+                self.now_playing_message = await self.voice_client.channel.send(embed=embed, view=view)
         except discord.HTTPException:
-            self.now_playing_message = None
+            try:
+                self.now_playing_message = await self.voice_client.channel.send(embed=embed, view=view)
+            except discord.HTTPException:
+                self.now_playing_message = None
 
         if self.loop_prep_task:
             self.loop_prep_task.cancel()
@@ -300,6 +308,15 @@ class GuildPlayer:
         self.next_override = None
         self.loop_current = False
         self.farm_channel_id = None
+        
+        # ─── BORRAR EL MENSAJE DE REPRODUCCIÓN ───
+        if self.now_playing_message:
+            try:
+                await self.now_playing_message.delete()
+            except discord.HTTPException:
+                pass
+            self.now_playing_message = None
+        
         if self.voice_client:
             self.voice_client.stop()
             await self.voice_client.disconnect()
@@ -316,7 +333,6 @@ class GuildPlayer:
         if self.queue:
             embed.set_footer(text=f"{len(self.queue)} canción(es) en cola")
         return embed, NowPlayingView(self)
-
 
 class MoveConfirmView(discord.ui.View):
     def __init__(self, author: discord.Member):
