@@ -39,13 +39,13 @@ FARM_DEFAULT_URL = os.environ.get("FARM_DEFAULT_URL")
 REPORT_OWNER_ID = int(os.environ.get("REPORT_OWNER_ID", BOT_OWNER_ID or "0"))
 
 # ════════════════════════════════════════════════════════════════════
-#  NUEVAS VARIABLES PARA EL CENTINELA
+#  VARIABLES DEL CENTINELA
 # ════════════════════════════════════════════════════════════════════
-CANAL_VOZ_ID = int(os.environ.get("CANAL_VOZ_ID", "0"))  # ID del canal a proteger
-BOT_CENTINELA_ID = int(os.environ.get("BOT_CENTINELA_ID", "0"))  # ID del otro bot (el centinela)
-MODO_CENTINELA = os.environ.get("MODO_CENTINELA", "false").lower() == "true"  # true = este bot es el centinela
-BOT_PRINCIPAL_ID = int(os.environ.get("BOT_PRINCIPAL_ID", "0"))  # ID del bot principal (si este es el centinela)
-
+CANAL_VOZ_ID = int(os.environ.get("CANAL_VOZ_ID", "0"))
+SERVIDOR_ID = int(os.environ.get("SERVIDOR_ID", "0"))
+MODO_CENTINELA = os.environ.get("MODO_CENTINELA", "false").lower() == "true"
+BOT_PRINCIPAL_ID = int(os.environ.get("BOT_PRINCIPAL_ID", "0"))
+BOT_CENTINELA_ID = int(os.environ.get("BOT_CENTINELA_ID", "0"))
 # ════════════════════════════════════════════════════════════════════
 
 
@@ -485,6 +485,7 @@ class Music(commands.Cog):
         self.bot = bot
         self.players: dict[int, GuildPlayer] = {}
         self.assigned_user_id: int | None = None
+        self._auto_join_done = False
 
     def _has_special_access(self, user_id: int, guild: discord.Guild) -> bool:
         return user_id == BOT_OWNER_ID or user_id == self.assigned_user_id or user_id == guild.owner_id
@@ -492,12 +493,67 @@ class Music(commands.Cog):
     def _is_owner_only(self, user_id: int, guild: discord.Guild) -> bool:
         return user_id == BOT_OWNER_ID or user_id == guild.owner_id
 
+    async def _auto_join_centinela(self):
+        """Auto-conexión del centinela al canal de voz."""
+        if self._auto_join_done:
+            return
+        self._auto_join_done = True
+
+        if not MODO_CENTINELA:
+            return
+
+        if CANAL_VOZ_ID == 0 or SERVIDOR_ID == 0:
+            print("⚠️ Centinela: Faltan CANAL_VOZ_ID o SERVIDOR_ID en .env")
+            return
+
+        print(f"🛡️ Centinela: Conectando al canal {CANAL_VOZ_ID} en servidor {SERVIDOR_ID}...")
+
+        # Esperar a que el bot esté completamente listo
+        await self.bot.wait_until_ready()
+
+        guild = self.bot.get_guild(SERVIDOR_ID)
+        if not guild:
+            print(f"❌ Centinela: Servidor {SERVIDOR_ID} no encontrado")
+            return
+
+        canal_voz = guild.get_channel(CANAL_VOZ_ID)
+        if not canal_voz:
+            print(f"❌ Centinela: Canal {CANAL_VOZ_ID} no encontrado")
+            return
+
+        player = self.get_player(guild.id)
+
+        # Si ya está conectado, no hacer nada
+        if player.voice_client and player.voice_client.is_connected():
+            print(f"✅ Centinela: Ya estaba conectado a {canal_voz.name}")
+            return
+
+        try:
+            player.voice_client = await canal_voz.connect()
+            print(f"✅ Centinela: Conectado exitosamente a {canal_voz.name}")
+
+            # Si hay FARM_DEFAULT_URL, iniciar farm automáticamente
+            if FARM_DEFAULT_URL:
+                print(f"🌾 Centinela: Iniciando farm con {FARM_DEFAULT_URL}")
+                try:
+                    track = await asyncio.to_thread(extract_track, FARM_DEFAULT_URL)
+                    track.requester = self.bot.user
+                    player.loop_current = True
+                    player.farm_channel_id = canal_voz.id
+                    player.next_override = track
+                    await player._start(track)
+                    print("✅ Centinela: Farm iniciado")
+                except Exception as e:
+                    print(f"❌ Centinela: Error al iniciar farm: {e}")
+
+        except Exception as e:
+            print(f"❌ Centinela: Error al conectar: {e}")
+
     # ════════════════════════════════════════════════════════════════════
     #  FUNCIONES DEL CENTINELA
     # ════════════════════════════════════════════════════════════════════
 
     async def _identificar_culpable(self, guild: discord.Guild, accion, objetivo_id: int, max_edad: float = 15.0):
-        """Identifica al responsable de una acción en el audit log."""
         try:
             async for entry in guild.audit_logs(limit=10, action=accion):
                 if entry.target and entry.target.id == objetivo_id:
@@ -509,7 +565,6 @@ class Music(commands.Cog):
         return None
 
     async def _quitar_permisos_canal(self, miembro: discord.Member, canal: discord.VoiceChannel) -> bool:
-        """Quita TODOS los permisos de un miembro en un canal de voz."""
         try:
             deny = discord.PermissionOverwrite(
                 connect=False,
@@ -534,7 +589,6 @@ class Music(commands.Cog):
             return False
 
     async def _restaurar_permisos_canal(self, miembro: discord.Member, canal: discord.VoiceChannel) -> bool:
-        """Elimina los permisos personalizados de un miembro en un canal."""
         try:
             await canal.set_permissions(miembro, overwrite=None)
             return True
@@ -542,7 +596,6 @@ class Music(commands.Cog):
             return False
 
     async def _reportar_agresor(self, guild: discord.Guild, canal: discord.VoiceChannel, culpable: discord.Member, accion: str):
-        """Reporta al owner por DM con los detalles del incidente."""
         try:
             owner = await self.bot.fetch_user(REPORT_OWNER_ID)
             if not owner:
@@ -564,7 +617,6 @@ class Music(commands.Cog):
             pass
 
     async def _reconectar_bot(self, guild: discord.Guild, canal: discord.VoiceChannel, bot_id: int):
-        """Reconecta a un bot al canal de voz."""
         try:
             bot_member = guild.get_member(bot_id)
             if bot_member:
@@ -575,16 +627,15 @@ class Music(commands.Cog):
         return False
 
     # ════════════════════════════════════════════════════════════════════
-    #  EVENTO on_voice_state_update (MEJORADO PARA EL CENTINELA)
+    #  EVENTO on_voice_state_update
     # ════════════════════════════════════════════════════════════════════
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
-        # ── Protección del bot principal (si este bot es el centinela) ──
+        # ── Protección del bot principal ──
         if MODO_CENTINELA and BOT_PRINCIPAL_ID > 0:
             if member.id == BOT_PRINCIPAL_ID:
                 if before.channel and not after.channel:
-                    # El bot principal fue desconectado
                     guild = member.guild
                     canal_voz = guild.get_channel(CANAL_VOZ_ID)
                     culpable = await self._identificar_culpable(guild, discord.AuditLogAction.member_disconnect, BOT_PRINCIPAL_ID)
@@ -594,7 +645,6 @@ class Music(commands.Cog):
                         await self._reportar_agresor(guild, canal_voz, culpable, "Intentó desconectar al bot principal")
                         await self._reconectar_bot(guild, canal_voz, BOT_PRINCIPAL_ID)
 
-                    # Asegurar que el centinela sigue en el canal
                     if not self.voice_client or not self.voice_client.is_connected():
                         if canal_voz:
                             try:
@@ -604,18 +654,17 @@ class Music(commands.Cog):
                                 pass
                     return
 
-        # ── Protección del propio bot (lock / farm) ──
+        # ── Protección del propio bot ──
         if member.id == self.bot.user.id:
             player = self.get_player(member.guild.id)
 
-            # Detectar si el bot fue movido de su canal protegido
             if player.locked and before.channel and before.channel.id == player.locked_channel_id:
                 if after.channel and after.channel.id != player.locked_channel_id:
                     canal_original = member.guild.get_channel(player.locked_channel_id)
                     if canal_original:
                         culprit = await self._identificar_culpable(member.guild, discord.AuditLogAction.member_move, self.bot.user.id)
                         if culprit:
-                            await self._quitar_permisos_canal(culpultor, canal_original)
+                            await self._quitar_permisos_canal(culprit, canal_original)
                             await self._reportar_agresor(member.guild, canal_original, culprit, "Intentó mover al bot con lock activo")
                         await asyncio.sleep(0.5)
                         try:
@@ -635,7 +684,6 @@ class Music(commands.Cog):
                         await asyncio.sleep(0.5)
                         try:
                             player.voice_client = await canal_original.connect()
-                            # Reanudar reproducción en el canal original
                             if player.current:
                                 track = player.current
                                 track.stream_url = None
@@ -644,11 +692,8 @@ class Music(commands.Cog):
                             pass
                 return
 
-            # Protección contra desconexión forzada
             if before.channel and not after.channel:
-                # Fue desconectado
                 player = self.get_player(member.guild.id)
-
                 canal_origen = None
                 modo = None
 
@@ -675,7 +720,7 @@ class Music(commands.Cog):
                         pass
                 return
 
-        # ── Si un humano se une al canal protegido, cancelar idle timer ──
+        # ── Idle timer ──
         if member.bot:
             return
         player = self.players.get(member.guild.id)
@@ -689,7 +734,7 @@ class Music(commands.Cog):
                 player.start_idle_timer()
 
     # ════════════════════════════════════════════════════════════════════
-    #  COMANDOS DEL CENTINELA (solo para el bot centinela)
+    #  COMANDOS DEL CENTINELA
     # ════════════════════════════════════════════════════════════════════
 
     @app_commands.command(name="centinela_estado", description="Muestra el estado del sistema centinela")
@@ -746,7 +791,7 @@ class Music(commands.Cog):
             await interaction.response.send_message(f"❌ No se pudieron quitar los permisos a {usuario.mention}")
 
     # ════════════════════════════════════════════════════════════════════
-    #  COMANDOS ORIGINALES (sin cambios)
+    #  COMANDOS ORIGINALES
     # ════════════════════════════════════════════════════════════════════
 
     async def _find_recent_culprit(self, guild: discord.Guild, action, max_age_seconds: float = 15.0):
@@ -979,7 +1024,6 @@ class Music(commands.Cog):
         embed.add_field(name="Repositorio de GitHub", value=github_repo, inline=False)
         embed.add_field(name="Canal / modo", value=self._status_line(player), inline=False)
 
-        # Si es centinela, mostrar info extra
         if MODO_CENTINELA:
             embed.add_field(name="🛡️ Modo", value="Centinela activo", inline=False)
         await ctx.send(embed=embed)
@@ -1194,7 +1238,6 @@ class Music(commands.Cog):
             ),
             inline=False,
         )
-        # Comandos del centinela
         if MODO_CENTINELA:
             embed.add_field(
                 name="🛡️ Comandos del Centinela",
@@ -1209,4 +1252,7 @@ class Music(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Music(bot))
+    cog = Music(bot)
+    await bot.add_cog(cog)
+    # Iniciar auto-conexión del centinela después de cargar el cog
+    asyncio.create_task(cog._auto_join_centinela())
