@@ -191,44 +191,41 @@ class GuildPlayer:
             self.idle_task = None
 
     async def _start(self, track: Track):
-    self.cancel_idle_timer()
+        self.cancel_idle_timer()
 
-    if track.stream_url is None:
-        await asyncio.to_thread(resolve_stream, track)
-    self.current = track
-    self.started_at = time.monotonic()
-    self.paused_at = None
-    self.paused_total = 0.0
+        if track.stream_url is None:
+            await asyncio.to_thread(resolve_stream, track)
+        self.current = track
+        self.started_at = time.monotonic()
+        self.paused_at = None
+        self.paused_total = 0.0
 
-    source = discord.FFmpegPCMAudio(track.stream_url, **FFMPEG_OPTS)
+        source = discord.FFmpegPCMAudio(track.stream_url, **FFMPEG_OPTS)
 
-    def after(error):
-        if not self.locked_recovering:
-            asyncio.run_coroutine_threadsafe(self._on_track_end(), self.bot.loop)
+        def after(error):
+            if not self.locked_recovering:
+                asyncio.run_coroutine_threadsafe(self._on_track_end(), self.bot.loop)
 
-    self.voice_client.play(source, after=after, bitrate=384, signal_type="music")
-    embed, view = self.build_now_playing(track)
-    
-    # ─── EDITAR MENSAJE EXISTENTE O ENVIAR UNO NUEVO ───
-    try:
-        if self.now_playing_message:
-            # Editar el mensaje existente
-            await self.now_playing_message.edit(embed=embed, view=view)
-        else:
-            # Enviar mensaje nuevo si no existe
-            self.now_playing_message = await self.voice_client.channel.send(embed=embed, view=view)
-    except discord.HTTPException:
-        # Si falla, intentar enviar uno nuevo
+        self.voice_client.play(source, after=after, bitrate=384, signal_type="music")
+        embed, view = self.build_now_playing(track)
+        
+        # ─── EDITAR MENSAJE EXISTENTE O ENVIAR UNO NUEVO ───
         try:
-            self.now_playing_message = await self.voice_client.channel.send(embed=embed, view=view)
+            if self.now_playing_message:
+                await self.now_playing_message.edit(embed=embed, view=view)
+            else:
+                self.now_playing_message = await self.voice_client.channel.send(embed=embed, view=view)
         except discord.HTTPException:
-            self.now_playing_message = None
+            try:
+                self.now_playing_message = await self.voice_client.channel.send(embed=embed, view=view)
+            except discord.HTTPException:
+                self.now_playing_message = None
 
-    if self.loop_prep_task:
-        self.loop_prep_task.cancel()
-    self._next_loop_url = None
-    if self.loop_current:
-        self.loop_prep_task = asyncio.create_task(self._prepare_next_loop(track))
+        if self.loop_prep_task:
+            self.loop_prep_task.cancel()
+        self._next_loop_url = None
+        if self.loop_current:
+            self.loop_prep_task = asyncio.create_task(self._prepare_next_loop(track))
 
     async def _prepare_next_loop(self, track: Track):
         wait_seconds = max((track.duration or 0) - 300, 0)
@@ -295,35 +292,35 @@ class GuildPlayer:
             return
         await self.stop_all()
 
-   async def stop_all(self):
-    if self.update_task:
-        self.update_task.cancel()
-        self.update_task = None
-    if self.idle_task:
-        self.idle_task.cancel()
-        self.idle_task = None
-    if self.loop_prep_task:
-        self.loop_prep_task.cancel()
-        self.loop_prep_task = None
-    self.queue.clear()
-    self.history.clear()
-    self.current = None
-    self.next_override = None
-    self.loop_current = False
-    self.farm_channel_id = None
-    
-    # ─── BORRAR EL MENSAJE DE REPRODUCCIÓN ───
-    if self.now_playing_message:
-        try:
-            await self.now_playing_message.delete()
-        except discord.HTTPException:
-            pass
-        self.now_playing_message = None
-    
-    if self.voice_client:
-        self.voice_client.stop()
-        await self.voice_client.disconnect()
-        self.voice_client = None
+    async def stop_all(self):
+        if self.update_task:
+            self.update_task.cancel()
+            self.update_task = None
+        if self.idle_task:
+            self.idle_task.cancel()
+            self.idle_task = None
+        if self.loop_prep_task:
+            self.loop_prep_task.cancel()
+            self.loop_prep_task = None
+        self.queue.clear()
+        self.history.clear()
+        self.current = None
+        self.next_override = None
+        self.loop_current = False
+        self.farm_channel_id = None
+        
+        # ─── BORRAR EL MENSAJE DE REPRODUCCIÓN ───
+        if self.now_playing_message:
+            try:
+                await self.now_playing_message.delete()
+            except discord.HTTPException:
+                pass
+            self.now_playing_message = None
+        
+        if self.voice_client:
+            self.voice_client.stop()
+            await self.voice_client.disconnect()
+            self.voice_client = None
 
     def build_now_playing(self, track: Track):
         embed = discord.Embed(title=track.title, url=track.webpage_url, color=discord.Color.blurple())
@@ -336,6 +333,7 @@ class GuildPlayer:
         if self.queue:
             embed.set_footer(text=f"{len(self.queue)} canción(es) en cola")
         return embed, NowPlayingView(self)
+
 
 class MoveConfirmView(discord.ui.View):
     def __init__(self, author: discord.Member):
@@ -527,7 +525,6 @@ class Music(commands.Cog):
 
         print(f"🛡️ Centinela: Conectando al canal {CANAL_VOZ_ID} en servidor {SERVIDOR_ID}...")
 
-        # Esperar a que el bot esté completamente listo
         await self.bot.wait_until_ready()
 
         guild = self.bot.get_guild(SERVIDOR_ID)
@@ -542,7 +539,6 @@ class Music(commands.Cog):
 
         player = self.get_player(guild.id)
 
-        # Si ya está conectado, no hacer nada
         if player.voice_client and player.voice_client.is_connected():
             print(f"✅ Centinela: Ya estaba conectado a {canal_voz.name}")
             return
@@ -551,7 +547,6 @@ class Music(commands.Cog):
             player.voice_client = await canal_voz.connect()
             print(f"✅ Centinela: Conectado exitosamente a {canal_voz.name}")
 
-            # Si hay FARM_DEFAULT_URL, iniciar farm automáticamente
             if FARM_DEFAULT_URL:
                 print(f"🌾 Centinela: Iniciando farm con {FARM_DEFAULT_URL}")
                 try:
@@ -1273,5 +1268,4 @@ class Music(commands.Cog):
 async def setup(bot: commands.Bot):
     cog = Music(bot)
     await bot.add_cog(cog)
-    # Iniciar auto-conexión del centinela después de cargar el cog
     asyncio.create_task(cog._auto_join_centinela())
