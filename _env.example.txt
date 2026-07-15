@@ -1,0 +1,37 @@
+# Token del bot
+DISCORD_TOKEN=tu_token_aqui
+
+# ID del owner del bot (tu ID de Discord)
+BOT_OWNER_ID=123456789012345678
+
+# ID a quien enviar reportes (opcional, por defecto BOT_OWNER_ID)
+REPORT_OWNER_ID=123456789012345678
+
+# URL por defecto para farm
+FARM_DEFAULT_URL=https://www.youtube.com/watch?v=dQw4w9WgXcQ
+
+# Cookies de YouTube (opcional)
+YTDLP_COOKIES=
+
+# ═══════════════════════════════════════════════════
+#  VARIABLES PARA EL CENTINELA
+# ═══════════════════════════════════════════════════
+
+# ID del canal de voz a proteger (mismo para ambos bots)
+CANAL_VOZ_ID=123456789012345678
+
+# ID del otro bot (para el centinela: ID del principal; para el principal: ID del centinela)
+BOT_CENTINELA_ID=123456789012345678
+BOT_PRINCIPAL_ID=123456789012345678
+
+# true si este bot es el centinela, false o omitir si es el principal
+MODO_CENTINELA=false
+
+# ═══════════════════════════════════════════════════
+#  ICONOS PARA BOTONES (opcional)
+# ═══════════════════════════════════════════════════
+ICON_PREVIOUS_ID=
+ICON_PLAY_ID=
+ICON_PAUSE_ID=
+ICON_NEXT_ID=
+ICON_STOP_ID=
