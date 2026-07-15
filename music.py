@@ -191,41 +191,44 @@ class GuildPlayer:
             self.idle_task = None
 
     async def _start(self, track: Track):
-        self.cancel_idle_timer()
+    self.cancel_idle_timer()
 
-        if track.stream_url is None:
-            await asyncio.to_thread(resolve_stream, track)
-        self.current = track
-        self.started_at = time.monotonic()
-        self.paused_at = None
-        self.paused_total = 0.0
+    if track.stream_url is None:
+        await asyncio.to_thread(resolve_stream, track)
+    self.current = track
+    self.started_at = time.monotonic()
+    self.paused_at = None
+    self.paused_total = 0.0
 
-        source = discord.FFmpegPCMAudio(track.stream_url, **FFMPEG_OPTS)
+    source = discord.FFmpegPCMAudio(track.stream_url, **FFMPEG_OPTS)
 
-        def after(error):
-            if not self.locked_recovering:
-                asyncio.run_coroutine_threadsafe(self._on_track_end(), self.bot.loop)
+    def after(error):
+        if not self.locked_recovering:
+            asyncio.run_coroutine_threadsafe(self._on_track_end(), self.bot.loop)
 
-        self.voice_client.play(source, after=after, bitrate=384, signal_type="music")
-        embed, view = self.build_now_playing(track)
-        
-        # ─── EDITAR MENSAJE EXISTENTE O ENVIAR UNO NUEVO ───
+    self.voice_client.play(source, after=after, bitrate=384, signal_type="music")
+    embed, view = self.build_now_playing(track)
+    
+    # ─── EDITAR MENSAJE EXISTENTE O ENVIAR UNO NUEVO ───
+    try:
+        if self.now_playing_message:
+            # Editar el mensaje existente
+            await self.now_playing_message.edit(embed=embed, view=view)
+        else:
+            # Enviar mensaje nuevo si no existe
+            self.now_playing_message = await self.voice_client.channel.send(embed=embed, view=view)
+    except discord.HTTPException:
+        # Si falla, intentar enviar uno nuevo
         try:
-            if self.now_playing_message:
-                await self.now_playing_message.edit(embed=embed, view=view)
-            else:
-                self.now_playing_message = await self.voice_client.channel.send(embed=embed, view=view)
+            self.now_playing_message = await self.voice_client.channel.send(embed=embed, view=view)
         except discord.HTTPException:
-            try:
-                self.now_playing_message = await self.voice_client.channel.send(embed=embed, view=view)
-            except discord.HTTPException:
-                self.now_playing_message = None
+            self.now_playing_message = None
 
-        if self.loop_prep_task:
-            self.loop_prep_task.cancel()
-        self._next_loop_url = None
-        if self.loop_current:
-            self.loop_prep_task = asyncio.create_task(self._prepare_next_loop(track))
+    if self.loop_prep_task:
+        self.loop_prep_task.cancel()
+    self._next_loop_url = None
+    if self.loop_current:
+        self.loop_prep_task = asyncio.create_task(self._prepare_next_loop(track))
 
     async def _prepare_next_loop(self, track: Track):
         wait_seconds = max((track.duration or 0) - 300, 0)
