@@ -295,35 +295,35 @@ class GuildPlayer:
             return
         await self.stop_all()
 
-    async def stop_all(self):
-        if self.update_task:
-            self.update_task.cancel()
-            self.update_task = None
-        if self.idle_task:
-            self.idle_task.cancel()
-            self.idle_task = None
-        if self.loop_prep_task:
-            self.loop_prep_task.cancel()
-            self.loop_prep_task = None
-        self.queue.clear()
-        self.history.clear()
-        self.current = None
-        self.next_override = None
-        self.loop_current = False
-        self.farm_channel_id = None
-        
-        # ─── BORRAR EL MENSAJE DE REPRODUCCIÓN ───
-        if self.now_playing_message:
-            try:
-                await self.now_playing_message.delete()
-            except discord.HTTPException:
-                pass
-            self.now_playing_message = None
-        
-        if self.voice_client:
-            self.voice_client.stop()
-            await self.voice_client.disconnect()
-            self.voice_client = None
+   async def stop_all(self):
+    if self.update_task:
+        self.update_task.cancel()
+        self.update_task = None
+    if self.idle_task:
+        self.idle_task.cancel()
+        self.idle_task = None
+    if self.loop_prep_task:
+        self.loop_prep_task.cancel()
+        self.loop_prep_task = None
+    self.queue.clear()
+    self.history.clear()
+    self.current = None
+    self.next_override = None
+    self.loop_current = False
+    self.farm_channel_id = None
+    
+    # ─── BORRAR EL MENSAJE DE REPRODUCCIÓN ───
+    if self.now_playing_message:
+        try:
+            await self.now_playing_message.delete()
+        except discord.HTTPException:
+            pass
+        self.now_playing_message = None
+    
+    if self.voice_client:
+        self.voice_client.stop()
+        await self.voice_client.disconnect()
+        self.voice_client = None
 
     def build_now_playing(self, track: Track):
         embed = discord.Embed(title=track.title, url=track.webpage_url, color=discord.Color.blurple())
